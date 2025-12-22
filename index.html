@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Spindle Cylinder System</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#020617">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: #0f172a;
+            font-family: Arial, sans-serif;
+            color: #f9fafb;
+        }
+
+        .center {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .box {
+            background: #020617;
+            padding: 30px;
+            width: 520px;
+            border-radius: 14px;
+            box-shadow: 0 0 40px rgba(0,0,0,0.6);
+        }
+
+        .fullscreen {
+            padding: 20px 30px;
+        }
+
+        h2 {
+            margin: 0;
+            color: #f9fafb;
+        }
+
+        label {
+            margin-top: 12px;
+            display: block;
+            font-size: 14px;
+        }
+
+        input, select, textarea, button {
+            width: 100%;
+            box-sizing: border-box;
+            color: #f9fafb;
+        }
+
+        input, select, textarea {
+            padding: 10px;
+            margin-top: 6px;
+            background: #020617;
+            border: 1px solid #334155;
+            border-radius: 6px;
+        }
+
+        input[type="date"] {
+            color-scheme: dark;
+        }
+
+        button {
+            margin-top: 16px;
+            padding: 12px;
+            background: #2563eb;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            color: #ffffff;
+        }
+
+        .secondary {
+            background: #334155;
+        }
+
+        .danger {
+            background: #dc2626;
+        }
+
+        .message {
+            margin-top: 14px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .error {
+            color: #f87171;
+        }
+
+        .success {
+            color: #4ade80;
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+
+        th, td {
+            padding: 8px;
+            border-bottom: 1px solid #334155;
+        }
+
+        th {
+            color: #93c5fd;
+            text-align: left;
+        }
+
+        .modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-box {
+            background: #020617;
+            padding: 20px;
+            border-radius: 12px;
+            width: 320px;
+            text-align: center;
+        }
+
+        .modal-box p {
+            margin-bottom: 14px;
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- PAGE 1: SUBMIT -->
+<div class="center" id="pageSubmit">
+    <div class="box">
+        <h2>Spindle Cylinder Log</h2>
+
+        <label>Employee No *</label>
+        <input id="emp" placeholder="Numbers only">
+
+        <label>Machine Type *</label>
+        <select id="machine">
+            <option value="">Select machine</option>
+        </select>
+
+        <label>Cylinder ID (Auto)</label>
+        <input id="cylinder" readonly>
+
+        <label>Date *</label>
+        <input id="date" type="date">
+
+        <label>Remarks</label>
+        <textarea id="remarks"></textarea>
+
+        <button id="submitBtn">Submit</button>
+        <button class="secondary" id="viewBtn">View Submissions</button>
+
+        <div class="message" id="msg"></div>
+    </div>
+</div>
+
+<!-- PAGE 2: VIEW -->
+<div id="pageView" style="display:none;">
+    <div class="fullscreen">
+        <div class="topbar">
+            <h2>Submissions</h2>
+            <div>
+                <button class="secondary" id="leaderBtn">Leader Login</button>
+                <button class="secondary" id="backBtn">Back</button>
+            </div>
+        </div>
+
+        <div id="tableWrap"></div>
+    </div>
+</div>
+
+<!-- CONFIRM MODAL -->
+<div class="modal" id="confirmModal">
+    <div class="modal-box">
+        <p>Confirm submission?</p>
+        <button id="confirmYes">Yes</button>
+        <button class="secondary" id="confirmNo">Cancel</button>
+    </div>
+</div>
+
+<!-- LEADER LOGIN -->
+<div class="modal" id="leaderModal">
+    <div class="modal-box">
+        <p>Leader Password</p>
+        <input id="leaderPass" type="password">
+        <button id="leaderLogin">Login</button>
+    </div>
+</div>
+
+<script>
+const client = supabase.createClient(
+    "https://ttvwmcmpvqmooforotqu.supabase.co",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0dndtY21wdnFtb29mb3JvdHF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNDkxNTUsImV4cCI6MjA4MDcyNTE1NX0.pJumMflIvlnHZ_HDF5gLojd0-zbV-Yfoiw3ejJSBkdA"
+);
+
+let isLeader = false;
+
+date.value = new Date().toISOString().split("T")[0];
+
+// Load machines
+(async () => {
+    const { data } = await client.from("Machine Types").select("id, name");
+    data.forEach(m => {
+        machine.innerHTML += `<option value="${m.id}">${m.name}</option>`;
+    });
+})();
+
+// Cylinder preview
+machine.onchange = async () => {
+    cylinder.value = "";
+    if (!machine.value) return;
+    const { data } = await client.rpc("next_cylinder_preview", { mt_id: Number(machine.value) });
+    cylinder.value = data;
+};
+
+// Submit click
+submitBtn.onclick = () => {
+    msg.textContent = "";
+    if (!emp.value) return showErr("Employee No is required");
+    if (!/^\d+$/.test(emp.value)) return showErr("Employee No must contain numbers only");
+    if (!machine.value) return showErr("Please select a machine type");
+    confirmModal.style.display = "flex";
+};
+
+confirmNo.onclick = () => confirmModal.style.display = "none";
+
+// Confirm submit
+confirmYes.onclick = async () => {
+    confirmModal.style.display = "none";
+
+    const { error } = await client.from("Submissions").insert({
+        "Emp No": emp.value,
+        "Cylinder ID": cylinder.value,
+        machine_type_id: Number(machine.value),
+        Remarks: remarks.value,
+        created_at: date.value
+    });
+
+    if (error) return showErr("Submission failed. Please try again.");
+
+    msg.textContent = "Submitted successfully";
+    msg.className = "message success";
+
+    emp.value = "";
+    machine.value = "";
+    cylinder.value = "";
+    remarks.value = "";
+    date.value = new Date().toISOString().split("T")[0];
+};
+
+// Navigation
+viewBtn.onclick = loadView;
+backBtn.onclick = () => {
+    pageView.style.display = "none";
+    pageSubmit.style.display = "flex";
+};
+
+leaderBtn.onclick = () => leaderModal.style.display = "flex";
+
+leaderLogin.onclick = () => {
+    if (leaderPass.value === "leader123") {
+        isLeader = true;
+        leaderModal.style.display = "none";
+        loadView();
+    }
+};
+
+// Load submissions
+async function loadView() {
+    pageSubmit.style.display = "none";
+    pageView.style.display = "block";
+
+    const { data } = await client
+        .from("Submissions")
+        .select(`id, created_at, "Emp No", "Cylinder ID", Remarks, "Machine Types"(name)`)
+        .order("created_at", { ascending: false });
+
+    if (!data || !data.length) {
+        tableWrap.innerHTML = "<p class='message'>No submissions found</p>";
+        return;
+    }
+
+    let html = `<table><tr>
+        <th>Date</th>
+        <th>Emp</th>
+        <th>Machine</th>
+        <th>Cylinder</th>
+        <th>Remarks</th>
+        ${isLeader ? "<th>Actions</th>" : ""}
+    </tr>`;
+
+    data.forEach(r => {
+        html += `<tr>
+            <td>${r.created_at.split("T")[0]}</td>
+            <td>${r["Emp No"]}</td>
+            <td>${r["Machine Types"].name}</td>
+            <td>${r["Cylinder ID"]}</td>
+            <td>${r.Remarks || ""}</td>
+            ${isLeader ? `<td><button class="danger" onclick="del(${r.id})">Delete</button></td>` : ""}
+        </tr>`;
+    });
+
+    tableWrap.innerHTML = html + "</table>";
+}
+
+// Delete
+async function del(id) {
+    if (!confirm("Delete this record?")) return;
+    await client.from("Submissions").delete().eq("id", id);
+    loadView();
+}
+
+function showErr(t) {
+    msg.textContent = t;
+    msg.className = "message error";
+}
+
+// PWA
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("service-worker.js");
+}
+</script>
+
+</body>
+</html>
