@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -13,7 +12,7 @@
 
 <!-- PWA Manifest -->
 <link rel="manifest" href="/manifest.json">
-  
+
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
 <style>
@@ -95,9 +94,17 @@ button {
 .fullscreen { padding: 20px 30px; }
 
 .topbar {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.back-btn {
+  width: auto;
+  padding: 6px 12px;
+  margin-top: 0;
 }
 
 table {
@@ -128,8 +135,22 @@ th { color: #0057B8; }
   cursor: pointer;
 }
 
+.download-btn {
+  background: #0F766E;
+  color: white;
+  font-size: 14px;
+}
+
 .edit-btn { background: #0057B8; color: white; }
 .delete-btn { background: #DC2626; color: white; }
+
+.result-count {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1E293B;
+  margin-top: 6px;
+  display: none;
+}
 
 .small-muted {
   font-size: 12px;
@@ -172,6 +193,59 @@ td textarea {
   gap: 10px;
   margin-top: 16px;
 }
+
+/* ===== Toolbar Layout ===== */
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.toolbar-row select,
+.toolbar-row input[type="date"] {
+  width: 160px;
+}
+
+.toolbar-row button {
+  height: 38px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.icon-btn.ghost {
+  background: transparent;
+  border: 1px solid #CBD5E1;
+  color: #1E293B;
+  font-size: 16px;
+}
+
+.icon-btn.ghost:hover {
+  background: #E2E8F0;
+}
+
+.full-row {
+  grid-column: 1 / -1;
+}
+
+#pageView .toolbar button {
+  width: auto;
+  padding: 6px 10px;
+  margin-top: 0;
+  font-weight: normal;
+}
+
+#pageView .toolbar {
+  max-width: 520px;
+  justify-self: end;
+}
+
 </style>
 </head>
 
@@ -215,12 +289,35 @@ td textarea {
 <div id="pageView" style="display:none;">
 <div class="fullscreen">
 <div class="topbar">
-<h2>Submissions</h2>
-<div>
-<button class="secondary" id="leaderBtn">Leader Login</button>
-<button class="secondary" id="logoutBtn" style="display:none;">Logout</button>
-<button class="secondary" id="backBtn">Back</button>
+  <button class="secondary icon-btn back-btn" id="backBtn">← Back</button>
+
+  <div class="title-block">
+    <h2>Submissions</h2>
+    <div id="resultCount" class="result-count"></div>
+  </div>
+
+  <div class="toolbar">
+  <div class="toolbar-row">
+    <select id="searchMachine">
+      <option value="">All Machines</option>
+    </select>
+
+    <input type="date" id="fromDate">
+    <input type="date" id="toDate">
+
+    <button class="icon-btn ghost" id="searchBtn" title="Search">🔍</button>
+    <button class="icon-btn ghost" id="clearSearchBtn" title="Clear">Clear Search</button>
+    <button class="icon-btn ghost" id="downloadBtn" title="Download">⬇</button>
+  </div>
+
+  <div class="toolbar-row">
+    <button class="secondary full-row" id="leaderBtn">Leader Login</button>
+    <button class="secondary full-row" id="logoutBtn" style="display:none;">
+      Logout
+    </button>
+  </div>
 </div>
+
 </div>
 <div id="tableWrap"></div>
 </div>
@@ -250,6 +347,18 @@ td textarea {
 </div>
 </div>
 
+<!-- DOWNLOAD MODAL -->
+<div class="modal" id="downloadModal">
+  <div class="modal-box">
+    <h3>Confirm Download</h3>
+    <p>Download the filtered submissions?</p>
+    <div class="modal-actions">
+      <button class="edit-btn" id="confirmDownload">Download</button>
+      <button class="secondary" id="cancelDownload">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- O-RING EDIT MODAL -->
 <div class="modal" id="oringModal">
   <div class="modal-box" style="width:420px;text-align:left;">
@@ -260,6 +369,9 @@ td textarea {
       <button class="secondary" onclick="closeOringModal()">Cancel</button>
     </div>
   </div>
+</div>
+<div class="modal" id="oringViewModal">
+  <div class="modal-box" id="oringViewBox"></div>
 </div>
 
 <script>
@@ -290,7 +402,11 @@ date.value = new Date().toISOString().split("T")[0];
 // Load machines
 (async () => {
   const { data } = await client.from("Machine Types").select("id,name");
-  data.forEach(m => machine.innerHTML += `<option value="${m.id}">${m.name}</option>`);
+  data.forEach(m => {
+  machine.innerHTML += `<option value="${m.id}">${m.name}</option>`;
+  searchMachine.innerHTML += `<option value="${m.id}">${m.name}</option>`;
+});
+
 })();
 
 // Auto cylinder preview (submit page)
@@ -398,9 +514,28 @@ async function loadView() {
   pageSubmit.style.display = "none";
   pageView.style.display = "block";
 
-  const { data } = await client.from("Submissions")
-    .select(`id,created_at,"Emp No","Cylinder ID",Remarks,edited_by,edited_at,o_ring_fs20k,machine_type_id,"Machine Types"(name)`)
-    .order("created_at",{ascending:false});
+let query = client.from("Submissions")
+  .select(`id,created_at,"Emp No","Cylinder ID",Remarks,edited_by,edited_at,o_ring_fs20k,machine_type_id,"Machine Types"(name)`)
+  .order("created_at",{ascending:false});
+
+if (fromDate.value) query = query.gte("created_at", fromDate.value);
+if (toDate.value) query = query.lte("created_at", toDate.value);
+if (searchMachine.value) query = query.eq("machine_type_id", Number(searchMachine.value));
+
+const { data } = await query;
+const countBox = document.getElementById("resultCount");
+
+if (fromDate.value || toDate.value || searchMachine.value) {
+  countBox.style.display = "block";
+
+  if (!data || data.length === 0) {
+    countBox.innerHTML = "<span style='color:#DC2626'>No results found</span>";
+  } else {
+    countBox.textContent = `${data.length} result(s) found`;
+  }
+} else {
+  countBox.style.display = "none";
+}
 
   window.lastData = data;
 
@@ -567,13 +702,15 @@ function showOrings(id) {
     }
   });
 
-  html += `<button class="secondary" onclick="oringModal.style.display='none'">Close</button>`;
+  html += `<button class="secondary" onclick="closeOringView()">Close</button>`;
 
-  oringModal.querySelector(".modal-box").innerHTML = html;
-  oringModal.style.display = "flex";
+  oringViewBox.innerHTML = html;
+  oringViewModal.style.display = "flex";
+
 }
 
 function editOrings(id) {
+ oringViewModal.style.display = "none";
   const row = window.lastData.find(r => r.id === id);
   if (!row || !row.o_ring_fs20k) return;
 
@@ -606,6 +743,10 @@ function closeOringModal() {
   oringModal.style.display = "none";
 }
 
+function closeOringView() {
+  oringViewModal.style.display = "none";
+}
+
 async function saveOrings() {
   if (!editingOringRow) return;
 
@@ -632,9 +773,81 @@ async function saveOrings() {
   loadView();
 }
 
+// DOWNLOAD BUTTON
+searchBtn.onclick = () => {
+  loadView();
+};
+
+clearSearchBtn.onclick = () => {
+  searchMachine.value = "";
+  fromDate.value = "";
+  toDate.value = "";
+  loadView();
+};
+
+downloadBtn.onclick = () => {
+  downloadModal.style.display = "flex";
+};
+
+cancelDownload.onclick = () => {
+  downloadModal.style.display = "none";
+};
+
+confirmDownload.onclick = async () => {
+  downloadModal.style.display = "none";
+  await performDownload();
+};
+async function performDownload() {
+  const from = fromDate.value;
+  const to = toDate.value;
+
+  let query = client
+    .from("Submissions")
+    .select(`created_at,"Emp No","Cylinder ID",Remarks,o_ring_fs20k,"Machine Types"(name)`)
+    .order("created_at", { ascending: true });
+
+  if (from) query = query.gte("created_at", from);
+  if (to) query = query.lte("created_at", to);
+  if (searchMachine.value)
+    query = query.eq("machine_type_id", Number(searchMachine.value));
+
+  const { data, error } = await query;
+  if (error || !data.length) {
+  downloadModal.style.display = "flex";
+  document.querySelector("#downloadModal p").textContent =
+    "No data found for the selected filters.";
+  return;
+}
+
+let csv = "Date,Employee,Machine,Cylinder,Remarks,O-Rings Details\n";
+
+  data.forEach(r => {
+  let details = [];
+
+  if (r.o_ring_fs20k) {
+    FS20K_ORINGS.forEach((o, i) => {
+      const d = r.o_ring_fs20k[i];
+      if (d?.checked || d?.remarks) {
+        details.push(`${o[0]} (${d.checked ? "✔" : "✖"}): ${d.remarks || "OK"}`);
+      }
+    });
+  }
+
+  csv += `"${r.created_at.split("T")[0]}","${r["Emp No"]}","${r["Machine Types"].name}","${r["Cylinder ID"]}","${(r.Remarks||"").replace(/"/g,'""')}","${details.join(" | ").replace(/"/g,'""')}"\n`;
+});
+
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "spindle_submissions.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 </script>
 </body>
 </html>
-
-
-
